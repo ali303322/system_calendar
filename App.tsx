@@ -13,34 +13,52 @@ import { NotificationsScreen } from './src/screens/NotificationsScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import { RegisterScreen } from './src/screens/RegisterScreen';
 import { LoginCredentials, RegisterCredentials, User } from './src/types';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 
 const Stack = createNativeStackNavigator();
 
 export default function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  // const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState<User | null>(null);
+    const [loading, setLoading] = useState(true);
+  const [token, setToken] = useState<string | null>(null);
 
   useEffect(() => {
-    const checkAuth = async () => {
-      setIsAuthenticated(false); // Start always disconnected for demo
+    const checkToken = async () => {
+      const storedToken = await AsyncStorage.getItem("authToken");
+      setToken(storedToken);
+      setLoading(false);
     };
-    checkAuth();
+    checkToken();
   }, []);
 
-  const handleLogin = async (credentials: LoginCredentials) => {
-    console.log('Tentative de connexion avec:', credentials);
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    // Créer un utilisateur basé sur les credentials
-    const newUser: User = {
-      id: '1',
-      email: credentials.email,
-      name: credentials.email.split('@')[0] || 'Utilisateur'
-    };
-    
-    setUser(newUser);
-    setIsAuthenticated(true);
-  };
+  if (loading) return null; // or splash screen
+
+  // useEffect(() => {
+  //   const checkAuth = async () => {
+  //     setIsAuthenticated(false); // Start always disconnected for demo
+  //   };
+  //   checkAuth();
+  // }, []);
+
+const handleLogin = async (token: string, user: User) => {
+  try {
+    // Save token in storage
+    if (Platform.OS === "web") {
+      localStorage.setItem("authToken", token);
+    } else {
+      await AsyncStorage.setItem("authToken", token);
+    }
+
+    // Update global state
+    setToken(token);
+    setUser(user);
+  } catch (err) {
+    console.error("Login error:", err);
+  }
+};
+
 
   const handleRegister = async (credentials: RegisterCredentials) => {
     console.log('Tentative d\'inscription avec:', credentials);
@@ -63,7 +81,7 @@ export default function App() {
 
 
 
-  if (!isAuthenticated) {
+  if (!token) {
     return (
       <SafeAreaProvider>
         <StatusBar style="auto" />

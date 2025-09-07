@@ -1,88 +1,204 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
-  Alert,
-} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import axios from 'axios';
+import React, { useEffect, useState } from 'react';
+import {
+  Alert,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { colors } from '../constants/Colors';
-import { User, Event } from '../types';
 import { EventService } from '../services/eventService';
+import { Event, User } from '../types';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { jwtDecode } from 'jwt-decode';
 
 interface EventsListScreenProps {
   user: User | null;
   navigation: any;
 }
 
+interface Event {
+  id: string;
+  title: string;
+  description?: string;
+  start_datetime: string;
+  end_datetime: string;
+  location?: string;
+  color: string;
+  is_public: boolean;
+  created_by: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+type TokenPayload = {
+  sub: string;   // or "userId" depending on how you generate the JWT
+  email: string;
+  exp: number;
+};
+
+
+
 export const EventsListScreen: React.FC<EventsListScreenProps> = ({ user, navigation }) => {
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fullEventsCount, setFullEventsCount] = useState(0);
+  const [currentMonthCount, setCurrentMonthCount] = useState(0);
+  const [currentDayCount, setCurrentDayCount] = useState(0);
+
+  
+
+// // getEvents();
+
+// useEffect(() => {
+//   getEvents();
+// }, []);
 
   useEffect(() => {
-    loadEvents();
+    loadUserEvents();
   }, []);
 
   // Recharger les événements quand on revient sur l'écran
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', () => {
-      loadEvents();
+      loadUserEvents();
     });
 
     return unsubscribe;
   }, [navigation]);
 
-  const loadEvents = async () => {
-    try {
-      setLoading(true);
-      const eventsData = await EventService.getEvents();
-      setEvents(eventsData);
-    } catch (error) {
-      Alert.alert('Erreur', 'Impossible de charger les événements');
-    } finally {
-      setLoading(false);
+const loadUserEvents = async (userId: string, token: string) => {
+  try {
+    const response = await axios.get(
+      `http://192.168.1.35:8000/events/user/${userId}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    console.log("User Events:", response.data.events);
+
+    setEvents(response.data.events);
+    setFullEventsCount(response.data.counts.total);
+    setCurrentMonthCount(response.data.counts.thisMonth);
+    setCurrentDayCount(response.data.counts.today);
+
+  } catch (error: any) {
+    if (error.response?.status === 401) {
+      console.error("Unauthorized – maybe token expired?");
+    } else {
+      console.error("Error fetching user events:", error);
+    }
+  }
+};
+
+
+useEffect(() => {
+  const load = async () => {
+    const token = await getToken(); // getToken should check AsyncStorage/localStorage
+    console.log("Loaded token:", token);
+    
+    if (token) {
+      try {
+        const decoded: TokenPayload = jwtDecode(token);
+        const userId = decoded.sub; // or decoded.userId depending on your JWT
+        console.log("user id:", userId);
+        
+
+        if (userId) {
+          await loadUserEvents(userId, token); // pass token too
+        }
+      } catch (err) {
+        console.error("Invalid token:", err);
+      }
     }
   };
+
+  load();
+}, []);
+
+
+
+
+  
 
   const handleCreateEvent = () => {
     navigation.navigate('EventForm', { mode: 'create' });
   };
 
-  const handleEditEvent = (event: Event) => {
+  const   handleEditEvent = (event: Event) => {
     navigation.navigate('EventForm', { mode: 'edit', event });
   };
 
-  const handleDeleteEvent = async (event: Event) => {
-    Alert.alert(
-      'Supprimer l\'événement',
-      `Êtes-vous sûr de vouloir supprimer "${event.title}" ?`,
-      [
-        { text: 'Annuler', style: 'cancel' },
-        { 
-          text: 'Supprimer', 
-          style: 'destructive', 
-          onPress: async () => {
-            try {
-              await EventService.deleteEvent(event.id);
-              Alert.alert('Succès', 'Événement supprimé avec succès');
-              loadEvents(); // Recharger la liste
-            } catch (error) {
-              Alert.alert('Erreur', 'Impossible de supprimer l\'événement');
-            }
-          }
-        }
-      ]
-    );
-  };
+  const getToken = async () => {
+  if (Platform.OS === "web") {
+    return localStorage.getItem("authToken");
+  } else {
+    return await AsyncStorage.getItem("authToken");
+  }
+};
+
+const confirmDelete = async (message: string) => {
+  if (Platform.OS === "web") {
+    return window.confirm(message);
+  } else {
+    return new Promise<boolean>((resolve) => {
+      Alert.alert(
+        "Confirmation",
+        message,
+        [
+          { text: "Annuler", style: "cancel", onPress: () => resolve(false) },
+          { text: "Supprimer", style: "destructive", onPress: () => resolve(true) },
+        ]
+      );
+    });
+  }
+};
+
+
+const handleDeleteEvent = async (event: Event) => {
+  const confirmed = await confirmDelete(`Supprimer "${event.title}" ?`);
+  if (!confirmed) return;
+
+  try {
+    const token = await getToken();
+
+    await axios.delete(`http://192.168.1.35:8000/events/${event.id}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    if (Platform.OS === "web") {
+      alert("Événement supprimé avec succès");
+      setEvents((prev) => prev.filter((e) => e.id !== event.id));
+    } else {
+      Alert.alert("Succès", "Événement supprimé avec succès");
+      setEvents((prev) => prev.filter((e) => e.id !== event.id));
+    }
+
+  } catch (error: any) {
+    console.error("Delete event error:", error.response?.data || error.message);
+    if (Platform.OS === "web") {
+      alert("Erreur lors de la suppression");
+    } else {
+      Alert.alert("Erreur", "Impossible de supprimer l'événement");
+    }
+  }
+};
+
+
 
   const handleViewEvent = (event: Event) => {
     navigation.navigate('EventDetails', { event });
   };
 
   const getEventIcon = (event: Event) => {
-    if (event.isAllDay) return 'calendar';
+    // if (event.isAllDay) return 'calendar';
     if (event.location) return 'location';
     return 'calendar';
   };
@@ -105,7 +221,7 @@ export const EventsListScreen: React.FC<EventsListScreenProps> = ({ user, naviga
   const getEventsForToday = () => {
     const today = new Date();
     return events.filter(event => {
-      const eventDate = new Date(event.startDate);
+      const eventDate = new Date(event.start_datetime);
       return eventDate.toDateString() === today.toDateString();
     });
   };
@@ -116,11 +232,12 @@ export const EventsListScreen: React.FC<EventsListScreenProps> = ({ user, naviga
     const currentYear = today.getFullYear();
     
     return events.filter(event => {
-      const eventDate = new Date(event.startDate);
+      const eventDate = new Date(event.start_datetime
+);
       return eventDate.getMonth() === currentMonth && eventDate.getFullYear() === currentYear;
     });
   };
-
+  
   return (
     <View style={styles.container}>
       {/* En-tête */}
@@ -140,22 +257,22 @@ export const EventsListScreen: React.FC<EventsListScreenProps> = ({ user, naviga
       {/* Statistiques */}
       <View style={styles.statsContainer}>
         <View style={styles.statItem}>
-          <Text style={styles.statNumber}>{events.length}</Text>
+          <Text style={styles.statNumber}>{fullEventsCount}</Text>
           <Text style={styles.statLabel}>Événements</Text>
         </View>
         <View style={styles.statItem}>
-          <Text style={styles.statNumber}>{getEventsForThisMonth().length}</Text>
+          <Text style={styles.statNumber}>{currentMonthCount}</Text>
           <Text style={styles.statLabel}>Ce mois</Text>
         </View>
         <View style={styles.statItem}>
-          <Text style={styles.statNumber}>{getEventsForToday().length}</Text>
+          <Text style={styles.statNumber}>{currentDayCount}</Text>
           <Text style={styles.statLabel}>Aujourd'hui</Text>
         </View>
       </View>
 
       {/* Liste des événements */}
       <ScrollView style={styles.eventsList}>
-        {loading ? (
+        {loading && !events ? (
           <View style={styles.loadingContainer}>
             <Text style={styles.loadingText}>Chargement des événements...</Text>
           </View>
@@ -171,60 +288,60 @@ export const EventsListScreen: React.FC<EventsListScreenProps> = ({ user, naviga
             </TouchableOpacity>
           </View>
         ) : (
-          events.map((event) => (
+          events.map((ev) => (
             <TouchableOpacity 
-              key={event.id} 
+              key={ev.id} 
               style={styles.eventCard}
-              onPress={() => handleViewEvent(event)}
+              onPress={() => handleViewEvent(ev)}
             >
               <View style={styles.eventHeader}>
                 <View style={styles.eventTypeContainer}>
-                  <View style={[styles.eventTypeDot, { backgroundColor: event.color }]} />
+                  <View style={[styles.eventTypeDot, { backgroundColor: ev.color }]} />
                   <Text style={styles.eventType}>
-                    {event.isAllDay ? 'Toute la journée' : 'Événement'}
+                    Événement
                   </Text>
                 </View>
                 <View style={styles.eventActions}>
                   <TouchableOpacity 
                     style={styles.actionButton}
-                    onPress={() => handleEditEvent(event)}
+                    onPress={() => handleEditEvent(ev)}
                   >
                     <Ionicons name="create-outline" size={20} color={colors.primary} />
                   </TouchableOpacity>
                   <TouchableOpacity 
                     style={styles.actionButton}
-                    onPress={() => handleDeleteEvent(event)}
+                    onPress={() => handleDeleteEvent(ev)}
                   >
                     <Ionicons name="trash-outline" size={20} color={colors.error} />
                   </TouchableOpacity>
                 </View>
               </View>
 
-              <Text style={styles.eventTitle}>{event.title}</Text>
+              <Text style={styles.eventTitle}>{ev.title}</Text>
               
-              {event.description && (
-                <Text style={styles.eventDescription}>{event.description}</Text>
+              {ev.description && (
+                <Text style={styles.eventDescription}>{ev.description}</Text>
               )}
               
               <View style={styles.eventDetails}>
                 <View style={styles.eventDetail}>
                   <Ionicons name="calendar-outline" size={16} color={colors.textSecondary} />
                   <Text style={styles.eventDetailText}>
-                    {formatDate(new Date(event.startDate))}
+                    {formatDate(new Date(ev.start_datetime))}
                   </Text>
                 </View>
-                {!event.isAllDay && (
+                {/* {!ev.isAllDay && (
                   <View style={styles.eventDetail}>
                     <Ionicons name="time-outline" size={16} color={colors.textSecondary} />
                     <Text style={styles.eventDetailText}>
-                      {formatTime(new Date(event.startDate))} - {formatTime(new Date(event.endDate))}
+                      {formatTime(new Date(ev.start_datetime))} - {formatTime(new Date(ev.end_datetime))}
                     </Text>
                   </View>
-                )}
-                {event.location && (
+                )} */}
+                {ev.location && (
                   <View style={styles.eventDetail}>
                     <Ionicons name="location-outline" size={16} color={colors.textSecondary} />
-                    <Text style={styles.eventDetailText}>{event.location}</Text>
+                    <Text style={styles.eventDetailText}>{ev.location}</Text>
                   </View>
                 )}
               </View>

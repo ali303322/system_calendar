@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { CommonActions } from '@react-navigation/native';
 import axios from 'axios';
 import { jwtDecode } from 'jwt-decode';
 import React, { useEffect, useState } from 'react';
@@ -19,7 +20,6 @@ import {
   View
 } from 'react-native';
 import { colors } from '../constants/Colors';
-import { EventService } from '../services/eventService';
 import { Event, User } from '../types';
 
 const { width, height } = Dimensions.get('window');
@@ -85,6 +85,7 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({ user, onLogout, 
     'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'
   ];
 
+
   useEffect(() => {
     generateCalendar();
     loadEvents();
@@ -95,14 +96,15 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({ user, onLogout, 
     const unsubscribe = navigation.addListener('focus', () => {
       loadEvents();
     });
-
     return unsubscribe;
   }, [navigation]);
 
+  // Fetch events from /event endpoint
   const loadEvents = async () => {
     try {
-      const eventsData = await EventService.getEvents();
-      setEvents(eventsData);
+      const response = await axios.get('http://192.168.1.35:8000/events');
+      // If your backend returns { events: [...] } adjust as needed
+      setEvents(response.data.events);
     } catch (error) {
       console.error('Erreur lors du chargement des événements:', error);
     }
@@ -402,10 +404,27 @@ const fetchUserInfo = async () => {
     setShowUserMenu(!showUserMenu);
   };
 
-  const handleLogout = () => {
-    setShowUserMenu(false);
-    onLogout();
-  };
+
+const handleLogout = async () => {
+  try {
+    if (Platform.OS === "web") {
+      localStorage.removeItem("authToken");
+      localStorage.removeItem("user");
+    } else {
+      await AsyncStorage.multiRemove(["authToken", "user"]);
+    }
+
+
+    navigation.dispatch(
+      CommonActions.reset({
+        index: 0,
+        routes: [{ name: "Login" }],
+      })
+    );
+  } catch (error) {
+    console.error("Error logging out:", error);
+  }
+};
 
   const handleSettings = () => {
     setShowUserMenu(false);
@@ -474,6 +493,7 @@ const fetchUserInfo = async () => {
     return years;
   };
 
+  // Use start_datetime and fallback to a default color if missing
   const getEventsForDay = (day: number) => {
     return events.filter(event => {
       const eventDate = new Date(event.startDate);
@@ -636,7 +656,7 @@ const fetchUserInfo = async () => {
             </View>
             
             {userInfo && (
-              <Text style={styles.welcomeText}>Bonjour, {userInfo.fullName} !</Text>
+              <Text style={styles.welcomeText}>Bonjour, {(userInfo as any).fullName || 'Utilisateur'} !</Text>
             )}
           </View>
 
@@ -676,6 +696,8 @@ const fetchUserInfo = async () => {
                 }
                 
                 const dayEvents = getEventsForDay(item.day);
+                console.log('Events for day', item);
+                
                 const today = new Date();
                 const isToday = item.day === today.getDate() && 
                                currentMonthIndex === today.getMonth() && 
@@ -701,22 +723,23 @@ const fetchUserInfo = async () => {
                     </Text>
                     
                     {dayEvents.length > 0 && (
-                      <View style={styles.eventDotsContainer}>
-                        {dayEvents.slice(0, 3).map((event, eventIndex) => (
-                          <View 
-                            key={event.id} 
-                            style={[
-                              styles.eventDot, 
-                              { backgroundColor: event.color },
-                              eventIndex > 0 && styles.eventDotMargin
-                            ]} 
-                          />
-                        ))}
-                        {dayEvents.length > 3 && (
-                          <Text style={styles.moreEventsText}>+{dayEvents.length - 3}</Text>
-                        )}
-                      </View>
-                    )}
+  <View style={styles.eventDotsContainer}>
+    {dayEvents.slice(0, 3).map((event, eventIndex) => (
+      <View
+        key={event.id || eventIndex}
+        style={[
+          styles.eventDot,
+          { backgroundColor: event.color || '#4ECDC4' },
+          eventIndex > 0 && styles.eventDotMargin,
+        ]}
+      />
+    ))}
+    {dayEvents.length > 3 && (
+      <Text style={styles.moreEventsText}>+{dayEvents.length - 3}</Text>
+    )}
+  </View>
+)}
+
                   </TouchableOpacity>
                 );
               })}
@@ -807,8 +830,8 @@ const fetchUserInfo = async () => {
                 <Ionicons name="person" size={32} color={colors.primary} />
               </View>
               <View style={styles.userInfo}>
-                <Text style={styles.userName}>{userInfo.fullName || 'Utilisateur'}</Text>
-                <Text style={styles.userEmail}>{userInfo.email || 'email@example.com'}</Text>
+                <Text style={styles.userName}>{(userInfo as any).fullName || 'Utilisateur'}</Text>
+                <Text style={styles.userEmail}>{(userInfo as any).email || 'email@example.com'}</Text>
               </View>
             </View>
 

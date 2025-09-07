@@ -137,28 +137,33 @@ export const EventDetailsScreen: React.FC<EventDetailsScreenProps> = ({
   };
 
   const getDuration = () => {
-    const start = new Date(event.startDate);
-    const end = new Date(event.endDate);
-    const diffMs = end.getTime() - start.getTime();
-    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-    const diffMinutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+  const start = new Date(event.start_datetime);
+  const end = new Date(event.end_datetime);
 
-    if (diffHours > 0) {
-      return `${diffHours}h ${diffMinutes > 0 ? `${diffMinutes}min` : ''}`;
-    } else {
-      return `${diffMinutes}min`;
-    }
-  };
+  const diffMs = end.getTime() - start.getTime();
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+  const diffMinutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
 
-  const getTimeUntilEvent = () => {
-    const now = new Date();
-    const eventTime = new Date(event.startDate);
-    const diffMs = eventTime.getTime() - now.getTime();
-    
-    if (diffMs < 0) {
-      return 'Événement en cours ou terminé';
-    }
+  if (diffHours > 0) {
+    return `${diffHours}h ${diffMinutes > 0 ? `${diffMinutes}min` : ''}`;
+  } else {
+    return `${diffMinutes}min`;
+  }
+};
 
+
+const getTimeUntilEvent = () => {
+  const now = new Date();
+  const start = new Date(event.start_datetime);
+  const end = new Date(event.end_datetime); // make sure you have end_datetime
+
+  if (now > end) {
+    return 'Événement terminé';
+  } else if (now >= start && now <= end) {
+    return 'Événement en cours';
+  } else {
+    // Event hasn't started yet
+    const diffMs = start.getTime() - now.getTime();
     const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
     const diffHours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
     const diffMinutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
@@ -170,7 +175,10 @@ export const EventDetailsScreen: React.FC<EventDetailsScreenProps> = ({
     } else {
       return `Dans ${diffMinutes}min`;
     }
-  };
+  }
+};
+  
+
 
   return (
     <SafeAreaView style={styles.container}>
@@ -210,14 +218,14 @@ export const EventDetailsScreen: React.FC<EventDetailsScreenProps> = ({
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Début:</Text>
             <Text style={styles.infoValue}>
-              {event.isAllDay ? formatDate(event.startDate) : formatDateTime(event.startDate)}
+              {event.start_datetime ? formatDateTime(event.start_datetime) : formatDate(event.start_datetime)}
             </Text>
           </View>
           
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Fin:</Text>
             <Text style={styles.infoValue}>
-              {event.isAllDay ? formatDate(event.endDate) : formatDateTime(event.endDate)}
+              {event.end_datetime ? formatDateTime(event.end_datetime) : formatDate(event.end_datetime)}
             </Text>
           </View>
           

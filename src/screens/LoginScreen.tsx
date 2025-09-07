@@ -84,7 +84,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
          await AsyncStorage.setItem("authToken", response.data.token);
    
          // Call the onLogin function to trigger authentication state change
-      await onLogin({ email: email.trim(), password });
+      await onLogin(response.data.token);
    
          Alert.alert("Succès 🎉", "Connexion réussie !", [
            {

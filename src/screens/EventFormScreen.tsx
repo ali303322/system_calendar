@@ -1,6 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import axios from 'axios';
+import { jwtDecode } from 'jwt-decode';
 import React, { useEffect, useState } from 'react';
 import {
   Alert,
@@ -18,8 +20,29 @@ import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { colors } from '../constants/Colors';
 import { EventService } from '../services/eventService';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { jwtDecode } from 'jwt-decode';
+
+// Simple toast for web
+function showMessage(message: string, type: 'info' | 'success' | 'error' = 'info') {
+  if (Platform.OS === 'web') {
+    let toast = document.createElement('div');
+    toast.innerText = message;
+    toast.style.position = 'fixed';
+    toast.style.bottom = '40px';
+    toast.style.left = '50%';
+    toast.style.transform = 'translateX(-50%)';
+    toast.style.background = type === 'error' ? '#e74c3c' : '#27ae60';
+    toast.style.color = 'white';
+    toast.style.padding = '14px 28px';
+    toast.style.borderRadius = '8px';
+    toast.style.fontSize = '16px';
+    toast.style.zIndex = 9999;
+    toast.style.boxShadow = '0 2px 8px rgba(0,0,0,0.15)';
+    document.body.appendChild(toast);
+    setTimeout(() => { toast.remove(); }, 2500);
+  } else {
+    Alert.alert(type === 'error' ? 'Erreur' : 'Succès', message);
+  }
+}
 
 // Couleurs pour les événements
 const eventColors = [
@@ -53,19 +76,34 @@ export const EventFormScreen: React.FC<EventFormScreenProps> = ({
   const [startDate, setStartDate] = useState(event?.startDate || new Date());
   const [endDate, setEndDate] = useState(event?.endDate || new Date(Date.now() + 60 * 60 * 1000));
   const [isAllDay, setIsAllDay] = useState(event?.isAllDay || false);
+  // Use event color if editing, otherwise default
   const [selectedColor, setSelectedColor] = useState(event?.color || eventColors[0]);
+// NOTE: If you see 'props.pointerEvents is deprecated. Use style.pointerEvents',
+// search your codebase for pointerEvents used as a prop and replace with style={{ pointerEvents: ... }} for React Native Web compatibility.
+  // const [selectedColo, setSelectedColo] = useState("");
   const [showStartPicker, setShowStartPicker] = useState(false);
   const [showEndPicker, setShowEndPicker] = useState(false);
   const [pickerMode, setPickerMode] = useState<'date' | 'time' | 'datetime'>('date');
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   // Ajout pour participants
-  const [participants, setParticipants] = useState<string[]>(event?.participants || []);
-  const [selectedUsers, setSelectedUsers] = useState<any[]>([]); // mémorise tous les users sélectionnés
+  const [participants, setParticipants] = useState<string[]>(
+  event?.participants ? event.participants.map((p: any) => p.user.id) : []
+);
+
+const [selectedUsers, setSelectedUsers] = useState<any[]>(
+  event?.participants ? event.participants.map((p: any) => ({
+    id: p.user.id,
+    email: p.user.email,
+    fullName: p.user.fullName
+  })) : []
+);
   const [userSearch, setUserSearch] = useState('');
   const [userResults, setUserResults] = useState<any[]>([]);
   // Pour created_by, à adapter selon ton auth
   const [createdBy, setCreatedBy] = useState('');
+
+  
 
   // Get token from storage
 const getToken = async () => {
@@ -133,6 +171,7 @@ const searchUsers = async (query: string) => {
 };
 
 
+
   // Ajout/suppression d'un participant
   const toggleParticipant = (user: any) => {
     if (participants.includes(user.id)) {
@@ -140,12 +179,19 @@ const searchUsers = async (query: string) => {
       setSelectedUsers(selectedUsers.filter((u) => u.id !== user.id));
     } else {
       setParticipants([...participants, user.id]);
-      setSelectedUsers([...selectedUsers, user]);
+      setSelectedUsers([...selectedUsers, user]); // user is { id, email }
     }
   };
+  console.log('par :',participants);
+  console.log('users :',selectedUsers);
+  console.log('event :',event);
+
   
-  // Nouvelle logique de sauvegarde avec axios
-  const handleSave = async () => {
+  
+  
+
+  // Nouvelle logique de sauvegarde avec axios (POST pour ajout, PUT pour update)
+  const handleAdd = async () => {
     if (!validateForm()) return;
     setLoading(true);
     try {
@@ -154,16 +200,44 @@ const searchUsers = async (query: string) => {
         description: description.trim(),
         start_datetime: startDate,
         end_datetime: endDate,
+        color : selectedColor,
         location: location.trim(),
-        is_public: !isEditing ? true : event.is_public, // ou à adapter
-        created_by: createdBy, // à adapter selon ton auth
-        participants,
+        is_public: true, // always true for add, or adapt as needed
+        created_by: createdBy,
+        participants : participants,
       };
       await axios.post('http://192.168.1.35:8000/events', payload);
-      Alert.alert('Succès', 'Événement créé avec succès !', [{ text: 'OK', onPress: () => navigation.goBack() }]);
+  showMessage('Événement créé avec succès !', 'success');
+  setTimeout(() => navigation.goBack(), Platform.OS === 'web' ? 1200 : 0);
     } catch (error) {
-      Alert.alert('Erreur', "Impossible de créer l'événement"+error);
+  showMessage("Impossible de créer l'événement"+error, 'error');
       console.error('Erreur lors de la création:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUpdate = async () => {
+    if (!validateForm()) return;
+    setLoading(true);
+    try {
+      const payload = {
+        title: title.trim(),
+        description: description.trim(),
+        start_datetime: startDate,
+        end_datetime: endDate,
+        color : selectedColor,
+        location: location.trim(),
+        is_public: event.is_public, // keep as is for update
+        created_by: createdBy,
+        participants : participants,
+      };
+      await axios.put(`http://192.168.1.35:8000/events/${event.id}`, payload);
+  showMessage('Événement modifié avec succès !', 'success');
+  setTimeout(() => navigation.goBack(), Platform.OS === 'web' ? 1200 : 0);
+    } catch (error) {
+  showMessage("Impossible de modifier l'événement"+error, 'error');
+      console.error('Erreur lors de la modification:', error);
     } finally {
       setLoading(false);
     }
@@ -172,33 +246,46 @@ const searchUsers = async (query: string) => {
   const handleDelete = async () => {
     if (!event?.id) return;
 
-    Alert.alert(
-      'Supprimer l\'événement',
-      'Êtes-vous sûr de vouloir supprimer cet événement ?',
-      [
-        { text: 'Annuler', style: 'cancel' },
-        {
-          text: 'Supprimer',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              setLoading(true);
-              await EventService.deleteEvent(event.id);
-              Alert.alert(
-                'Succès',
-                'Événement supprimé avec succès !',
-                [{ text: 'OK', onPress: () => navigation.goBack() }]
-              );
-            } catch (error) {
-              Alert.alert('Erreur', 'Impossible de supprimer l\'événement');
-              console.error('Erreur lors de la suppression:', error);
-            } finally {
-              setLoading(false);
-            }
+    if (Platform.OS === 'web') {
+      if (window.confirm('Êtes-vous sûr de vouloir supprimer cet événement ?')) {
+        try {
+          setLoading(true);
+          await EventService.deleteEvent(event.id);
+          showMessage('Événement supprimé avec succès !', 'success');
+          setTimeout(() => navigation.goBack(), 1200);
+        } catch (error) {
+          showMessage('Impossible de supprimer l\'événement', 'error');
+          console.error('Erreur lors de la suppression:', error);
+        } finally {
+          setLoading(false);
+        }
+      }
+    } else {
+      Alert.alert(
+        'Supprimer l\'événement',
+        'Êtes-vous sûr de vouloir supprimer cet événement ?',
+        [
+          { text: 'Annuler', style: 'cancel' },
+          {
+            text: 'Supprimer',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                setLoading(true);
+                await EventService.deleteEvent(event.id);
+                showMessage('Événement supprimé avec succès !', 'success');
+                navigation.goBack();
+              } catch (error) {
+                showMessage('Impossible de supprimer l\'événement', 'error');
+                console.error('Erreur lors de la suppression:', error);
+              } finally {
+                setLoading(false);
+              }
+            },
           },
-        },
-      ]
-    );
+        ]
+      );
+    }
   };
 
   const handleStartDateChange = (event: any, selectedDate?: Date) => {
@@ -238,6 +325,9 @@ const searchUsers = async (query: string) => {
   const formatDateTime = (date: Date) => {
     return `${formatDate(date)} à ${formatTime(date)}`;
   };
+
+  console.log(selectedColor);
+  
 
   return (
     <SafeAreaView style={styles.container}>
@@ -315,7 +405,7 @@ const searchUsers = async (query: string) => {
             {errors.endDate && (
               <Text style={styles.errorText}>{errors.endDate}</Text>
             )}
-            <TouchableOpacity
+            {/* <TouchableOpacity
               style={styles.allDayToggle}
               onPress={() => setIsAllDay(!isAllDay)}
             >
@@ -325,7 +415,7 @@ const searchUsers = async (query: string) => {
                 color={isAllDay ? colors.primary : colors.textSecondary}
               />
               <Text style={styles.allDayText}>Toute la journée</Text>
-            </TouchableOpacity>
+            </TouchableOpacity> */}
           </View>
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Participants</Text>
@@ -352,6 +442,7 @@ const searchUsers = async (query: string) => {
                     style={[styles.participantDropdownItem, participants.includes(user.id) && styles.participantDropdownItemSelected]}
                     activeOpacity={0.7}
                   >
+
                     <Ionicons
                       name={participants.includes(user.id) ? 'checkmark-circle' : 'ellipse-outline'}
                       size={18}
@@ -367,14 +458,17 @@ const searchUsers = async (query: string) => {
               {selectedUsers.map((user) => (
                 <View key={user.id} style={styles.selectedParticipantChip}>
                   <Ionicons name="person" size={14} color={colors.primary} style={{marginRight: 4}} />
-                  <Text style={styles.selectedParticipantText}>{user.email}</Text>
+                  <Text style={styles.selectedParticipantText}>
+                    {user.fullName ?? user.email}
+                  </Text>
+
                 </View>
               ))}
             </View>
           </View>
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Couleur</Text>
-            <View style={styles.colorPicker}>
+            <View style={[styles.colorPicker, {pointerEvents: "auto"}]}>
               {eventColors.map((color) => (
                 <TouchableOpacity
                   key={color}
@@ -451,13 +545,23 @@ const searchUsers = async (query: string) => {
                 fullWidth
               />
             )}
-            <Button
-              title={isEditing ? 'Modifier' : 'Créer'}
-              onPress={handleSave}
-              loading={loading}
-              style={styles.saveButton}
-              fullWidth
-            />
+            {isEditing ? (
+              <Button
+                title="Modifier"
+                onPress={handleUpdate}
+                loading={loading}
+                style={styles.saveButton}
+                fullWidth
+              />
+            ) : (
+              <Button
+                title="Créer"
+                onPress={handleAdd}
+                loading={loading}
+                style={styles.saveButton}
+                fullWidth
+              />
+            )}
           </View>
         </View>
       </KeyboardAvoidingView>
