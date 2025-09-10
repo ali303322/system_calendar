@@ -6,11 +6,13 @@ export interface User {
 }
 
 export interface Event {
+  end_datetime?: string;
   id: string;
   title: string;
   description?: string;
   startDate: Date;
   endDate: Date;
+  start_datetime?: string;
   location?: string;
   color?: string;
   isAllDay?: boolean;

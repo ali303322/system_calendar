@@ -1,5 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
+import { jwtDecode } from 'jwt-decode';
 import React, { useEffect, useState } from 'react';
 import {
   Alert,
@@ -11,10 +13,7 @@ import {
   View,
 } from 'react-native';
 import { colors } from '../constants/Colors';
-import { EventService } from '../services/eventService';
 import { Event, User } from '../types';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { jwtDecode } from 'jwt-decode';
 
 interface EventsListScreenProps {
   user: User | null;
@@ -64,17 +63,29 @@ export const EventsListScreen: React.FC<EventsListScreenProps> = ({ user, naviga
 
   // Recharger les événements quand on revient sur l'écran
   useEffect(() => {
-    const unsubscribe = navigation.addListener('focus', () => {
-      loadUserEvents();
+    const unsubscribe = navigation.addListener('focus', async () => {
+      setLoading(true);
+      const token = await getToken();
+      if (token) {
+        try {
+          const decoded: TokenPayload = jwtDecode(token);
+          const userId = decoded.sub;
+          if (userId) {
+            await loadUserEvents(userId, token);
+          }
+        } catch (err) {
+          console.error("Invalid token:", err);
+        }
+      }
+      setLoading(false);
     });
-
     return unsubscribe;
   }, [navigation]);
 
 const loadUserEvents = async (userId: string, token: string) => {
   try {
     const response = await axios.get(
-      `http://192.168.1.35:8000/events/user/${userId}`,
+      `http://192.168.11.122:8000/events/user/${userId}`,
       {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -95,6 +106,8 @@ const loadUserEvents = async (userId: string, token: string) => {
     } else {
       console.error("Error fetching user events:", error);
     }
+  } finally {
+    setLoading(false);
   }
 };
 
@@ -169,7 +182,7 @@ const handleDeleteEvent = async (event: Event) => {
   try {
     const token = await getToken();
 
-    await axios.delete(`http://192.168.1.35:8000/events/${event.id}`, {
+    await axios.delete(`http://192.168.11.122:8000/events/${event.id}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
 
@@ -193,8 +206,8 @@ const handleDeleteEvent = async (event: Event) => {
 
 
 
-  const handleViewEvent = (event: Event) => {
-    navigation.navigate('EventDetails', { event });
+  const handleViewEvent = (eventId : string) => {
+  navigation.navigate('EventDetails', { eventId: eventId });
   };
 
   const getEventIcon = (event: Event) => {
@@ -292,7 +305,7 @@ const handleDeleteEvent = async (event: Event) => {
             <TouchableOpacity 
               key={ev.id} 
               style={styles.eventCard}
-              onPress={() => handleViewEvent(ev)}
+              onPress={() => handleViewEvent(ev.id)}
             >
               <View style={styles.eventHeader}>
                 <View style={styles.eventTypeContainer}>

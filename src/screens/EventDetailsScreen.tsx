@@ -1,20 +1,19 @@
+import { Ionicons } from '@expo/vector-icons';
 import React, { useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
   Alert,
+  ScrollView,
   Share,
-  Linking,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
 import { Button } from '../components/ui/Button';
 import { colors } from '../constants/Colors';
-import { Event } from '../types';
 import { EventService } from '../services/eventService';
+import { Event } from '../types';
 
 interface EventDetailsScreenProps {
   navigation: any;
@@ -25,8 +24,24 @@ export const EventDetailsScreen: React.FC<EventDetailsScreenProps> = ({
   navigation,
   route,
 }) => {
-  const event: Event = route.params.event;
+  const eventId = route.params?.eventId;
+  const [event, setEvent] = useState<Event | null>(null);
   const [loading, setLoading] = useState(false);
+
+  React.useEffect(() => {
+    const fetchEvent = async () => {
+      setLoading(true);
+      try {
+        const response = await require('axios').get(`http://192.168.11.122:8000/events/${eventId}`);
+        setEvent(response.data);
+      } catch (error) {
+        console.error('Erreur lors du chargement de l\'événement:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    if (eventId) fetchEvent();
+  }, [eventId]);
 
   if (!event) {
     return (
@@ -137,9 +152,10 @@ export const EventDetailsScreen: React.FC<EventDetailsScreenProps> = ({
   };
 
   const getDuration = () => {
-  const start = new Date(event.start_datetime);
-  const end = new Date(event.end_datetime);
+  const start = event.start_datetime ? new Date(event.start_datetime) : event.startDate ? new Date(event.startDate) : null;
+  const end = event.end_datetime ? new Date(event.end_datetime) : event.endDate ? new Date(event.endDate) : null;
 
+  if (!start || !end) return '';
   const diffMs = end.getTime() - start.getTime();
   const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
   const diffMinutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
@@ -154,9 +170,10 @@ export const EventDetailsScreen: React.FC<EventDetailsScreenProps> = ({
 
 const getTimeUntilEvent = () => {
   const now = new Date();
-  const start = new Date(event.start_datetime);
-  const end = new Date(event.end_datetime); // make sure you have end_datetime
+  const start = event.start_datetime ? new Date(event.start_datetime) : event.startDate ? new Date(event.startDate) : null;
+  const end = event.end_datetime ? new Date(event.end_datetime) : event.endDate ? new Date(event.endDate) : null;
 
+  if (!start || !end) return '';
   if (now > end) {
     return 'Événement terminé';
   } else if (now >= start && now <= end) {
@@ -218,14 +235,14 @@ const getTimeUntilEvent = () => {
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Début:</Text>
             <Text style={styles.infoValue}>
-              {event.start_datetime ? formatDateTime(event.start_datetime) : formatDate(event.start_datetime)}
+              {event.start_datetime ? formatDateTime(new Date(event.start_datetime)) : event.startDate ? formatDateTime(new Date(event.startDate)) : ''}
             </Text>
           </View>
           
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Fin:</Text>
             <Text style={styles.infoValue}>
-              {event.end_datetime ? formatDateTime(event.end_datetime) : formatDate(event.end_datetime)}
+              {event.end_datetime ? formatDateTime(new Date(event.end_datetime)) : event.endDate ? formatDateTime(new Date(event.endDate)) : ''}
             </Text>
           </View>
           

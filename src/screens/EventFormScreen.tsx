@@ -163,7 +163,7 @@ const getUserIdFromToken = async () => {
 const searchUsers = async (query: string) => {
   if (!query) return setUserResults([]);
   try {
-    const res = await axios.get(`http://192.168.1.35:8000/user/search`, { params: { email: query } });
+    const res = await axios.get(`http://192.168.11.122:8000/user/search`, { params: { email: query } });
     setUserResults(res.data || []);
   } catch (e) {
     setUserResults([]);
@@ -206,7 +206,7 @@ const searchUsers = async (query: string) => {
         created_by: createdBy,
         participants : participants,
       };
-      await axios.post('http://192.168.1.35:8000/events', payload);
+      await axios.post('http://192.168.11.122:8000/events', payload);
   showMessage('Événement créé avec succès !', 'success');
   setTimeout(() => navigation.goBack(), Platform.OS === 'web' ? 1200 : 0);
     } catch (error) {
@@ -232,7 +232,7 @@ const searchUsers = async (query: string) => {
         created_by: createdBy,
         participants : participants,
       };
-      await axios.put(`http://192.168.1.35:8000/events/${event.id}`, payload);
+      await axios.put(`http://192.168.11.122:8000/events/${event.id}`, payload);
   showMessage('Événement modifié avec succès !', 'success');
   setTimeout(() => navigation.goBack(), Platform.OS === 'web' ? 1200 : 0);
     } catch (error) {

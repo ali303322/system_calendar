@@ -1,6 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { CommonActions } from '@react-navigation/native';
 import axios from 'axios';
 import { jwtDecode } from 'jwt-decode';
 import React, { useEffect, useState } from 'react';
@@ -102,7 +101,7 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({ user, onLogout, 
   // Fetch events from /event endpoint
   const loadEvents = async () => {
     try {
-      const response = await axios.get('http://192.168.1.35:8000/events');
+      const response = await axios.get('http://192.168.11.122:8000/events');
       // If your backend returns { events: [...] } adjust as needed
       setEvents(response.data.events);
     } catch (error) {
@@ -145,7 +144,7 @@ const fetchUserInfo = async () => {
   }
 
   try {
-    const response = await axios.get(`http://192.168.1.35:8000/user/${userId}`, {
+    const response = await axios.get(`http://192.168.11.122:8000/user/${userId}`, {
       headers: {
         Authorization: `Bearer ${token}`,
       },
@@ -406,24 +405,7 @@ const fetchUserInfo = async () => {
 
 
 const handleLogout = async () => {
-  try {
-    if (Platform.OS === "web") {
-      localStorage.removeItem("authToken");
-      localStorage.removeItem("user");
-    } else {
-      await AsyncStorage.multiRemove(["authToken", "user"]);
-    }
-
-
-    navigation.dispatch(
-      CommonActions.reset({
-        index: 0,
-        routes: [{ name: "Login" }],
-      })
-    );
-  } catch (error) {
-    console.error("Error logging out:", error);
-  }
+  await onLogout();
 };
 
   const handleSettings = () => {
@@ -496,7 +478,7 @@ const handleLogout = async () => {
   // Use start_datetime and fallback to a default color if missing
   const getEventsForDay = (day: number) => {
     return events.filter(event => {
-      const eventDate = new Date(event.startDate);
+      const eventDate = new Date(event.start_datetime);
       return eventDate.getDate() === day && 
              eventDate.getMonth() === currentMonthIndex && 
              eventDate.getFullYear() === currentYear;
@@ -504,26 +486,36 @@ const handleLogout = async () => {
   };
 
   const getNotificationsForToday = () => {
-    const today = new Date();
-    const todayEvents = getEventsForDay(today.getDate());
-    
-    const notifications = [];
-    
-    // Notifications pour les événements d'aujourd'hui
+    const now = new Date();
+    const todayEvents = getEventsForDay(now.getDate());
+    const notifications: Array<{
+      icon: any;
+      color: string;
+      type: string;
+      text: string;
+      time: string;
+    }> = [];
+
     todayEvents.forEach(event => {
-      const eventTime = new Date(event.startDate);
-      const timeDiff = eventTime.getTime() - today.getTime();
+      const eventTime = new Date(event.start_datetime || event.startDate);
+      const endTime = event.end_datetime ? new Date(event.end_datetime) : null;
+      const timeDiff = eventTime.getTime() - now.getTime();
       const minutesDiff = Math.floor(timeDiff / (1000 * 60));
-      
+
+      // Bientôt (dans moins d'1h)
       if (minutesDiff > 0 && minutesDiff <= 60) {
         notifications.push({
           icon: 'time' as any,
           color: colors.eventYellow,
-          type: 'Rappel',
+          type: 'Bientôt',
           text: `${event.title} dans ${minutesDiff} min`,
           time: eventTime.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
         });
-      } else if (minutesDiff <= 0 && minutesDiff > -120) {
+      }
+      // En cours (maintenant entre start et end)
+      else if (
+        (minutesDiff <= 0 && (!endTime || now.getTime() < endTime.getTime()))
+      ) {
         notifications.push({
           icon: 'play-circle' as any,
           color: colors.eventBlue,
@@ -533,33 +525,8 @@ const handleLogout = async () => {
         });
       }
     });
-    
-    // Notifications pour les événements de demain
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const tomorrowEvents = getEventsForDay(tomorrow.getDate());
-    
-    if (tomorrowEvents.length > 0) {
-      notifications.push({
-        icon: 'calendar' as any,
-        color: colors.eventCyan,
-        type: 'Demain',
-        text: `${tomorrowEvents.length} événement(s) prévu(s)`,
-        time: 'Préparation'
-      });
-    }
-    
-    // Notifications générales
-    if (notifications.length === 0) {
-      notifications.push({
-        icon: 'checkmark-circle' as any,
-        color: colors.success,
-        type: 'Aucun événement',
-        text: 'Aucun événement prévu aujourd\'hui',
-        time: 'Journée libre'
-      });
-    }
-    
+
+    // Ne rien afficher si aucune notification
     return notifications;
   };
 

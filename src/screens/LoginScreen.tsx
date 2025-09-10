@@ -1,7 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
-import React, { useState } from 'react';
+import { User } from '../types';
+import React, { useEffect, useState } from 'react';
 import {
   Alert,
   Animated,
@@ -18,15 +19,20 @@ import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { colors } from '../constants/Colors';
 import { GoogleAuthService } from '../services/googleAuthService';
+import * as Google from 'expo-auth-session/providers/google';
+import * as WebBrowser from 'expo-web-browser';
 import { LoginCredentials, RegisterCredentials } from '../types';
 
+// LoginScreenProps
 interface LoginScreenProps {
   navigation: any;
-  onLogin: (credentials: LoginCredentials) => Promise<void>;
+  onLogin: (token: string, user: User) => Promise<void>;
   onRegister: (credentials: RegisterCredentials) => Promise<void>;
 }
 
+
 export const LoginScreen: React.FC<LoginScreenProps> = ({
+  // Google Auth
   navigation,
   onLogin,
   onRegister,
@@ -37,7 +43,12 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
-  const [fadeAnim] = useState(new Animated.Value(0));
+  const [fadeAnim] = useState(new Animated.Value(0));;
+
+    const [request, response, promptAsync] = Google.useAuthRequest({
+    webClientId: '1038371246862-dji6bgtd7tmbmru6rn2tgohsegl0146s.apps.googleusercontent.com',
+    iosClientId: '1038371246862-rnckm488ke1kt91dq070v8ade2m2mm5h.apps.googleusercontent.com',
+  });
 
   React.useEffect(() => {
     Animated.timing(fadeAnim, {
@@ -46,6 +57,41 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       useNativeDriver: true,
     }).start();
   }, []);
+
+  useEffect(() => {
+    if (response?.type === 'success') {
+      const { authentication } = response;
+      fetch('https://www.googleapis.com/userinfo/v2/me', {
+        headers: { Authorization: `Bearer ${authentication?.accessToken}` },
+      })
+        .then(res => res.json())
+        .then(async userInfo => {
+          try {
+            setGoogleLoading(true);
+
+            // Send user info to your backend
+            const res = await axios.post('http://192.168.11.122:8000/auth/google', {
+              email: userInfo.email,
+              googleId: userInfo.id,
+              name: userInfo.name,
+            });
+
+            if (res.data?.token && res.data?.user) {
+              await AsyncStorage.setItem('authToken', res.data.token);
+              await onLogin(res.data.token, res.data.user);
+              Alert.alert('Succès 🎉', 'Connexion Google réussie !');
+            } else {
+              Alert.alert('Erreur', 'Réponse invalide du serveur');
+            }
+          } catch (err) {
+            console.error('Google login error:', err);
+            Alert.alert('Erreur', 'Impossible de se connecter avec Google');
+          } finally {
+            setGoogleLoading(false);
+          }
+        });
+    }
+  }, [response]);
 
   const validateForm = (): boolean => {
     const newErrors: { email?: string; password?: string } = {};
@@ -75,16 +121,15 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     setLoading(true);
   
     try {
-      const response = await axios.post("http://192.168.1.35:8000/auth/login", {
+      const response = await axios.post("http://192.168.11.122:8000/auth/login", {
         email: email.trim().toLowerCase(),
         password: password,
       });
   
-             if (response.data?.token) {
+             if (response.data?.token  && response.data?.user) {
          await AsyncStorage.setItem("authToken", response.data.token);
    
-         // Call the onLogin function to trigger authentication state change
-      await onLogin(response.data.token);
+      await onLogin(response.data.token, response.data.user);
    
          Alert.alert("Succès 🎉", "Connexion réussie !", [
            {
@@ -121,7 +166,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       if (googleUser) {
         try {
           // Appel à l'API de connexion avec les données Google
-          const response = await axios.post("http://192.168.1.35:8000/auth/login", {
+          const response = await axios.post("http://192.168.11.122:8000/auth/login", {
           email: googleUser.email,
           password: `google_auth_${googleUser.id}`, // Mot de passe spécial pour les utilisateurs Google
           });
@@ -282,23 +327,23 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                 />
                 
                 <TouchableOpacity
-                  style={[styles.googleButton, styles.fullWidth, googleLoading && styles.googleButtonLoading]}
-                  onPress={handleGoogleLogin}
-                  disabled={googleLoading || loading}
-                  activeOpacity={0.8}
-                >
-                  {googleLoading ? (
-                    <>
-                      <View style={styles.loadingSpinner} />
-                      <Text style={styles.googleButtonText}>Connexion Google en cours...</Text>
-                    </>
-                  ) : (
-                    <>
-                      <Ionicons name="logo-google" size={20} color="#4285F4" style={styles.googleIcon} />
-                      <Text style={styles.googleButtonText}>Continuer avec Google</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            padding: 12,
+            borderRadius: 8,
+            borderWidth: 1,
+            borderColor: colors.border,
+            backgroundColor: colors.card,
+          }}
+          onPress={() => promptAsync()}
+          disabled={googleLoading}
+        >
+          <Ionicons name="logo-google" size={24} color="#4285F4" />
+          <Text style={{ marginLeft: 8, fontWeight: 'bold' }}>
+            {googleLoading ? 'Connexion en cours...' : 'Continuer avec Google'}
+          </Text>
+        </TouchableOpacity>
 
               </View>
             </View>

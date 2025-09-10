@@ -205,7 +205,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
     setLoading(true);
   
     try {
-      const response = await axios.post("http://192.168.1.35:8000/auth/register", {
+      const response = await axios.post("http://192.168.11.122:8000/auth/register", {
         fullName: name.trim(),
         email: email.trim().toLowerCase(),
         password: password,
